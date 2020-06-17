@@ -13,13 +13,14 @@ import freechips.rocketchip.rocket.{RocketCoreParams, MulDivParams, DCacheParams
 import freechips.rocketchip.util.{AsyncResetReg}
 
 import boom.common.{BoomTilesKey}
-
+import ariane.{ArianeTilesKey}
 import testchipip._
 
 import hwacha.{Hwacha}
 
 import sifive.blocks.devices.gpio._
 import sifive.blocks.devices.uart._
+import sifive.blocks.devices.spi._
 
 import chipyard.{BuildTop, BuildSystem}
 
@@ -52,6 +53,12 @@ class WithUART extends Config((site, here, up) => {
     UARTParams(address = 0x54000000L, nTxEntries = 256, nRxEntries = 256))
 })
 
+class WithSPIFlash(size: BigInt = 0x10000000) extends Config((site, here, up) => {
+  // Note: the default size matches freedom with the addresses below
+  case PeripherySPIFlashKey => Seq(
+    SPIFlashParams(rAddress = 0x10040000, fAddress = 0x20000000, fSize = size))
+})
+
 class WithL2TLBs(entries: Int) extends Config((site, here, up) => {
   case RocketTilesKey => up(RocketTilesKey) map (tile => tile.copy(
     core = tile.core.copy(nL2TLBEntries = entries)
@@ -65,7 +72,6 @@ class WithTracegenSystem extends Config((site, here, up) => {
   case BuildSystem => (p: Parameters) => LazyModule(new tracegen.TraceGenSystem()(p))
 })
 
-
 class WithRenumberHarts(rocketFirst: Boolean = false) extends Config((site, here, up) => {
   case RocketTilesKey => up(RocketTilesKey, site).zipWithIndex map { case (r, i) =>
     r.copy(hartId = i + (if(rocketFirst) 0 else up(BoomTilesKey, site).length))
@@ -75,12 +81,6 @@ class WithRenumberHarts(rocketFirst: Boolean = false) extends Config((site, here
   }
   case MaxHartIdBits => log2Up(up(BoomTilesKey, site).size + up(RocketTilesKey, site).size)
 })
-
-
-
-// ------------------
-// Multi-RoCC Support
-// ------------------
 
 /**
  * Map from a hartId to a particular RoCC accelerator
@@ -145,4 +145,10 @@ class WithControlCore extends Config((site, here, up) => {
       hartId = up(RocketTilesKey, site).size + up(BoomTilesKey, site).size
     )
   case MaxHartIdBits => log2Up(up(RocketTilesKey, site).size + up(BoomTilesKey, site).size + 1)
+})
+
+class WithTraceIO extends Config((site, here, up) => {
+  case BoomTilesKey => up(BoomTilesKey) map (tile => tile.copy(trace = true))
+  case ArianeTilesKey => up(ArianeTilesKey) map (tile => tile.copy(trace = true))
+  case TracePortKey => Some(TracePortParams())
 })

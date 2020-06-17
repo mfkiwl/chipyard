@@ -29,6 +29,7 @@ object NodeIdx {
 }
 
 class FireSim(implicit val p: Parameters) extends RawModule {
+  freechips.rocketchip.util.property.cover.setPropLib(new midas.passes.FireSimPropertyLibrary())
   val clockBridge = Module(new RationalClockBridge)
   val clock = clockBridge.io.clocks.head
   val reset = WireInit(false.B)
@@ -45,6 +46,7 @@ class FireSim(implicit val p: Parameters) extends RawModule {
       }))
       (lazyModule, Module(lazyModule.module))
     }
+
     val peekPokeBridge = PeekPokeBridge(clock, reset)
     // A Seq of partial functions that will instantiate the right bridge only
     // if that Mixin trait is present in the target's LazyModule class instance

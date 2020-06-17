@@ -24,6 +24,8 @@ import freechips.rocketchip.amba.axi4._
 import boom.common.{BoomTile, BoomTilesKey, BoomCrossingKey, BoomTileParams}
 import ariane.{ArianeTile, ArianeTilesKey, ArianeCrossingKey, ArianeTileParams}
 
+import testchipip.{DromajoHelper}
+
 trait HasChipyardTiles extends HasTiles
   with CanHavePeripheryPLIC
   with CanHavePeripheryCLINT
@@ -104,4 +106,8 @@ class SubsystemModuleImp[+L <: Subsystem](_outer: L) extends BaseSubsystemModule
 
   // create file with boom params
   ElaborationArtefacts.add("""core.config""", outer.tiles.map(x => x.module.toString).mkString("\n"))
+
+  // Generate C header with relevant information for Dromajo
+  // This is included in the `dromajo_params.h` header file
+  DromajoHelper.addArtefacts
 }

@@ -79,10 +79,12 @@ class FiresimMulticlockTop(implicit p: Parameters) extends chipyard.DigitalTop
   override lazy val module = new FiresimMulticlockTopModule(this)
 }
 
+
 class FiresimMulticlockTopModule[+L <: DigitalTop](l: L) extends chipyard.DigitalTopModule(l) with HasFireSimClockingImp
 
 // Harness Definition
 class FireSimMulticlockPOC(implicit val p: Parameters) extends RawModule {
+  freechips.rocketchip.util.property.cover.setPropLib(new midas.passes.FireSimPropertyLibrary())
   val clockBridge = Module(new RationalClockBridge(p(FireSimClockKey).additionalClocks:_*))
   val refClock = clockBridge.io.clocks.head
   val reset = WireInit(false.B)
