@@ -14,7 +14,7 @@ sudo apt-get install -y libexpat1-dev libusb-dev libncurses5-dev cmake
 # deps for poky
 sudo apt-get install -y python3.6 patch diffstat texi2html texinfo subversion chrpath git wget
 # deps for qemu
-sudo apt-get install -y libgtk-3-dev
+sudo apt-get install -y libgtk-3-dev gettext
 # deps for firemarshal
 sudo apt-get install -y python3-pip python3.6-dev rsync libguestfs-tools expat ctags
 # install DTC
@@ -24,4 +24,4 @@ sudo apt-get install -y device-tree-compiler
 git clone http://git.veripool.org/git/verilator
 cd verilator
 git checkout v4.034
-autoconf && ./configure && make -j16 && sudo make install
+autoconf && ./configure && make -j$(nproc) && sudo make install
