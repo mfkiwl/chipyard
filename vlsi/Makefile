@@ -12,6 +12,7 @@ sim_dir=$(abspath .)
 #########################################################################################
 # include shared variables
 #########################################################################################
+include $(vlsi_dir)/tutorial.mk
 include $(base_dir)/variables.mk
 
 #########################################################################################
@@ -19,7 +20,7 @@ include $(base_dir)/variables.mk
 #########################################################################################
 sim_name           ?= vcs # needed for GenerateSimFiles, but is unused
 tech_name          ?= asap7
-tech_dir           ?= $(if $(filter $(tech_name),asap7 nangate45),\
+tech_dir           ?= $(if $(filter $(tech_name),sky130 asap7 nangate45),\
                         $(vlsi_dir)/hammer/src/hammer-vlsi/technology/$(tech_name), \
                         $(vlsi_dir)/hammer-$(tech_name)-plugin/$(tech_name))
 SMEMS_COMP         ?= $(tech_dir)/sram-compiler.json
@@ -30,14 +31,16 @@ ifdef USE_SRAM_COMPILER
 	MACROCOMPILER_MODE ?= -l $(SMEMS_COMP) --use-compiler -hir $(SMEMS_HAMMER) --mode strict
 else
 	MACROCOMPILER_MODE ?= -l $(SMEMS_CACHE) -hir $(SMEMS_HAMMER) --mode strict
-endif	
+endif
 
 ENV_YML            ?= $(vlsi_dir)/env.yml
-INPUT_CONFS        ?= example-tools.yml \
-                      $(if $(filter $(tech_name),nangate45),\
-                        example-nangate45.yml,\
-                        example-asap7.yml)
-HAMMER_EXEC        ?= ./example-vlsi
+TECH_CONF          ?= $(if $(filter $(tech_name),asap7),        example-asap7.yml,\
+                                                                example-sky130.yml)
+TOOLS_CONF         ?= example-tools.yml
+INPUT_CONFS        ?= $(TOOLS_CONF) $(TECH_CONF)
+HAMMER_EXEC        ?= $(if $(filter $(tech_name),sky130),\
+                        ./example-vlsi-sky130,\
+                        ./example-vlsi)
 VLSI_TOP           ?= $(TOP)
 VLSI_HARNESS_DUT_NAME ?= chiptop
 # If overriding, this should be relative to $(vlsi_dir)
@@ -158,7 +161,7 @@ $(SIM_CONF): $(VLSI_RTL) $(HARNESS_FILE) $(HARNESS_SMEMS_FILE) $(sim_common_file
 ifneq ($(BINARY), )
 	echo "  benchmarks: ['$(BINARY)']" >> $@
 endif
-	echo "  tb_dut: 'testHarness.$(VLSI_HARNESS_DUT_NAME)'" >> $@
+	echo "  tb_dut: 'TestDriver.testHarness.$(VLSI_HARNESS_DUT_NAME)'" >> $@
 
 $(SIM_DEBUG_CONF): $(VLSI_RTL) $(HARNESS_FILE) $(HARNESS_SMEMS_FILE) $(sim_common_files)
 	mkdir -p $(dir $@)
@@ -174,7 +177,14 @@ $(SIM_DEBUG_CONF): $(VLSI_RTL) $(HARNESS_FILE) $(HARNESS_SMEMS_FILE) $(sim_commo
 	echo "  saif.mode: 'time'" >> $@
 	echo "  saif.start_time: '0ns'" >> $@
 	echo "  saif.end_time: '`bc <<< $(timeout_cycles)*$(CLOCK_PERIOD)`ns'" >> $@
+ifndef USE_VPD
+	echo "  options:" >> $@
+	echo '    - "-kdb"' >> $@
+	echo "  options_meta: 'append'" >> $@
+	echo "sim.outputs.waveforms: ['$(sim_out_name).fsdb']" >> $@
+else
 	echo "sim.outputs.waveforms: ['$(sim_out_name).vpd']" >> $@
+endif
 
 $(SIM_TIMING_CONF): $(VLSI_RTL) $(HARNESS_FILE) $(HARNESS_SMEMS_FILE) $(sim_common_files)
 	mkdir -p $(dir $@)
@@ -191,11 +201,12 @@ $(POWER_CONF): $(VLSI_RTL) $(HARNESS_FILE) $(HARNESS_SMEMS_FILE) $(sim_common_fi
 	echo "  tb_dut: 'testHarness/$(VLSI_HARNESS_DUT_NAME)'" >> $@
 	echo "  database: '$(OBJ_DIR)/par-rundir/$(VLSI_TOP)_FINAL'" >> $@
 ifneq ($(BINARY), )
-	echo "  saifs: [" >> $@
-	echo "    '$(OBJ_DIR)/sim-par-rundir/$(notdir $(BINARY))/ucli.saif'" >> $@
-	echo "  ]" >> $@
 	echo "  waveforms: [" >> $@
-	#echo "    '$(OBJ_DIR)/sim-par-rundir/$(notdir $(BINARY))/$(sim_out_name).vcd'" >> $@
+ifndef USE_VPD
+	echo "    '$(sim_out_name).fsdb'" >> $@
+else
+	echo "    '$(sim_out_name).vpd'" >> $@
+endif
 	echo "  ]" >> $@
 endif
 	echo "  start_times: ['0ns']" >> $@

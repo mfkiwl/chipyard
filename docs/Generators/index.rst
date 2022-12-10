@@ -21,6 +21,7 @@ so changes to the generators themselves will automatically be used when building
    Rocket-Chip
    Rocket
    BOOM
+   Constellation
    Hwacha
    Gemmini
    IceNet
@@ -28,6 +29,9 @@ so changes to the generators themselves will automatically be used when building
    SiFive-Generators
    SHA3
    CVA6
+   Ibex
+   fft
    NVDLA
    Sodor
+   Mempress
 

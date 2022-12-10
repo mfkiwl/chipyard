@@ -16,8 +16,8 @@ import freechips.rocketchip.subsystem._
 // Simple passthrough to use as testbed sanity check
 // StreamingPassthrough params
 case class StreamingPassthroughParams(
-  writeAddress: BigInt = 0x2000,
-  readAddress: BigInt = 0x2100,
+  writeAddress: BigInt = 0x2200,
+  readAddress: BigInt = 0x2300,
   depth: Int
 )
 
@@ -26,8 +26,6 @@ case object StreamingPassthroughKey extends Field[Option[StreamingPassthroughPar
 
 class StreamingPassthroughBundle[T<:Data:Ring](proto: T) extends Bundle {
     val data: T = proto.cloneType
-
-    override def cloneType: this.type = StreamingPassthroughBundle(proto).asInstanceOf[this.type]
 }
 object StreamingPassthroughBundle {
     def apply[T<:Data:Ring](proto: T): StreamingPassthroughBundle[T] = new StreamingPassthroughBundle(proto)

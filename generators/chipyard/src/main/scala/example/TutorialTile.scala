@@ -7,7 +7,6 @@ import freechips.rocketchip.config._
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.diplomacy._
-import freechips.rocketchip.diplomaticobjectmodel.logicaltree.{LogicalTreeNode}
 import freechips.rocketchip.rocket._
 import freechips.rocketchip.subsystem.{RocketCrossingParams}
 import freechips.rocketchip.tilelink._
@@ -28,6 +27,7 @@ case class MyCoreParams(
   enableToFromHostCaching: Boolean = false,
 ) extends CoreParams {
   val useVM: Boolean = true
+  val useHypervisor: Boolean = false
   val useUser: Boolean = true
   val useSupervisor: Boolean = false
   val useDebug: Boolean = true
@@ -41,6 +41,7 @@ case class MyCoreParams(
   val fpu: Option[FPUParams] = Some(FPUParams()) // copied fma latencies from Rocket
   val nLocalInterrupts: Int = 0
   val useNMI: Boolean = false
+  val nPTECacheEntries: Int = 0 // TODO: Check
   val nPMPs: Int = 0 // TODO: Check
   val pmpGranularity: Int = 4 // copied from Rocket
   val nBreakpoints: Int = 0 // TODO: Check
