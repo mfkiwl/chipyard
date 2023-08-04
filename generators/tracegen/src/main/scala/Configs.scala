@@ -2,12 +2,13 @@ package tracegen
 
 import chisel3._
 import chisel3.util.log2Ceil
-import freechips.rocketchip.config.{Config, Parameters}
+import org.chipsalliance.cde.config.{Config, Parameters}
 import freechips.rocketchip.groundtest.{TraceGenParams, TraceGenTileAttachParams}
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.system.BaseConfig
 import freechips.rocketchip.rocket.DCacheParams
 import freechips.rocketchip.tile.{MaxHartIdBits, XLen}
+import boom.lsu._
 import scala.math.{max, min}
 
 class WithTraceGen(

@@ -144,32 +144,24 @@ All ``make`` targets that can be applied to the default example, can also be app
     make SUB_PROJECT=hwacha run-asm-tests
 
 
-Finally, in the ``generated-src/<...>-<package>-<config>/`` directory resides all of the collateral and Verilog source files for the build/simulation.
-Specifically, the SoC top-level (``TOP``) Verilog file is denoted with ``*.top.v`` while the ``TestHarness`` file is denoted with ``*.harness.v``.
+Finally, in the ``generated-src/<...>-<package>-<config>/`` directory resides all of the collateral while the generated Verilog source files resides in ``generated-src/<...>-<package>-<config>/gen-collateral`` for the build/simulation.
+Specifically, for ``CONFIG=RocketConfig`` the SoC top-level (``TOP``) Verilog file is ``ChipTop.sv`` while the (``Model``) file is ``TestHarness.sv``.
 
 Fast Memory Loading
 -------------------
 
 The simulator loads the program binary over a simulated serial line. This can be quite slow if there is a lot of static data, so the simulator also allows data to be loaded from a file directly into the DRAM model.
+Loadmem files should be ELF files. In the most common use case, this can be the binary.
 
 .. code-block:: shell
 
-    make run-binary BINARY=test.riscv LOADMEM=testdata.hex LOADMEM_ADDR=81000000
+    make run-binary BINARY=test.riscv LOADMEM=test.riscv
 
-The ``.hex`` file should be a text file with a hexadecimal number on each line.
-
-.. code-block:: text
-
-    deadbeef
-    0123
-
-Each line uses little-endian order, so this file would produce the bytes "ef be ad de 01 23". ``LOADMEM_ADDR`` specifies which address in memory (in hexadecimal) to write the first byte to. The default is 0x81000000.
-
-A special target that facilitates automatically generating a hex file for an entire elf RISC-V exectuable and then running the simulator with the appropriate flags is also available.
+Usually the ``LOADMEM`` ELF is the same as the ``BINARY`` ELF, so ``LOADMEM=1`` can be used as a shortcut.
 
 .. code-block:: shell
 
-    make run-binary-hex BINARY=test.riscv
+   make run-binary BINARY=test.riscv LOADMEM=1
 
 Generating Waveforms
 -----------------------
@@ -187,6 +179,16 @@ An open-source vcd-capable waveform viewer is `GTKWave <http://gtkwave.sourcefor
 
 For a VCS simulation, this will generate a vpd file (this is a proprietary waveform representation format used by Synopsys) that can be loaded to vpd-supported waveform viewers.
 If you have Synopsys licenses, we recommend using the DVE waveform viewer.
+
+Visualizing Chipyard SoCs
+--------------------------
+
+During verilog creation, a graphml file is emitted that will allow you to visualize your Chipyard SoC as a diplomacy graph.
+
+To view the graph, first download a viewer such as `yEd <https://www.yworks.com/products/yed/>`__.
+
+The ``*.graphml`` file will be located in ``generated-src/<...>/``. Open the file in the graph viewer. 
+To get a clearer view of the SoC, switch to "hierarchical" view. For yEd, this would be done by selecting ``layout`` -> ``hierarchical``, and then choosing "Ok" without changing any settings.
 
 .. _sw-sim-verilator-opts:
 

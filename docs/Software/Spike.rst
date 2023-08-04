@@ -21,3 +21,32 @@ full cycle-accurate simulation using software RTL simulators or FireSim.
 
 Spike comes pre-packaged in the RISC-V toolchain and is available on the path as ``spike``.
 More information can be found in the `Spike repository <https://github.com/riscv/riscv-isa-sim>`__.
+
+Spike-as-a-Tile
+-----------------
+
+Chipyard contains experimental support for simulating a Spike processor model with the uncore, similar to a virtual-platform.
+In this configuration, Spike is cache-coherent, and communicates with the uncore through a C++ TileLink private cache model.
+
+.. code-block:: shell
+
+    make CONFIG=SpikeConfig run-binary BINARY=hello.riscv
+
+Spike-as-a-Tile also supports Tightly-Coupled-Memory (TCM) for the SpikeTile, in which the main system memory is entirely modeled
+within the Spike tile, allowing for very fast simulatoin performance.
+
+.. code-block:: shell
+
+    make CONFIG=SpikeUltraFastConfig run-binary BINARY=hello.riscv
+
+Spike-as-a-Tile can be configured with custom IPC, commit logging, and other behaviors. Spike-specific flags can be added as plusargs to ``EXTRA_SIM_FLAGS``
+
+..  code-block:: shell
+
+    make CONFIG=SpikeUltraFastConfig run-binary BINARY=hello.riscv EXTRA_SPIKE_FLAGS="+spike-ipc=10000 +spike-fast-clint +spike-debug" LOADMEM=1
+
+
+* ``+spike-ipc=``: Sets the maximum number of instructions Spike can retire in a single "tick", or cycle of the uncore simulation.
+* ``+spike-fast-clint``: Enables fast-forwarding through WFI stalls by generating fake timer interrupts
+* ``+spike-debug``: Enables debug Spike logging
+* ``+spike-verbose``: Enables Spike commit-log generation

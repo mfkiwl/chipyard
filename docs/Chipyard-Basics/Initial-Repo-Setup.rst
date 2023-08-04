@@ -27,27 +27,28 @@ Conda allows users to create an "environment" that holds system dependencies lik
 
 .. Note:: Chipyard can also run on systems without a Conda installation. However, users on these systems must manually install toolchains and dependencies.
 
-First, Chipyard requires Conda to be installed on the system.
-Please refer to the `Conda installation instructions <https://github.com/conda-forge/miniforge/#download>`__ on how to install Conda with the **Miniforge** installer.
-Afterwards, verify that Conda is a sufficient version (we test on version 4.12.0 but higher is most likely fine).
-
-.. Note:: If you have installed conda separately from this documentation (i.e. from miniconda or full Anaconda), please ensure you follow https://conda-forge.org/docs/user/introduction.html#how-can-i-install-packages-from-conda-forge to use ``conda-forge`` packages without any issues.
-
-.. code-block:: shell
-
-    conda --version # must be version 4.12.0 or higher
+First, Chipyard requires the latest Conda to be installed on the system.
+Please refer to the `Conda installation instructions <https://github.com/conda-forge/miniforge/#download>`__ on how to install the latest Conda with the **Miniforge** installer.
 
 After Conda is installed and is on your ``PATH``, we need to install a version of ``git`` to initially checkout the repository.
 For this you can use the system package manager like ``yum`` or ``apt`` to install ``git``.
 This ``git`` is only used to first checkout the repository, we will later install a newer version of ``git`` with Conda.
+
+Next, we install `libmamba <https://www.anaconda.com/blog/a-faster-conda-for-a-growing-community>`__ for much faster dependency solving when initially setting up the repository.
+
+.. code-block:: shell
+
+    conda install -n base conda-libmamba-solver
+    conda config --set solver libmamba
 
 Finally we need to install ``conda-lock`` into the ``base`` conda environment.
 This is done by the following:
 
 .. code-block:: shell
 
-    conda install -n base conda-lock
+    conda install -n base conda-lock=1.4
     conda activate base
+
 
 Setting up the Chipyard Repo
 -------------------------------------------
@@ -62,27 +63,47 @@ Start by checking out the proper Chipyard version. Run:
     # note: this may not be the latest release if the documentation version != "stable"
     git checkout |version|
 
-Next run the following script to create Chipyard's Conda environment including a pre-built RISC-V toolchain.
-There are two toolchains, one for normal RISC-V programs called ``riscv-tools`` which is the one needed for most Chipyard use-cases, and another for Hwacha/Gemmini called ``esp-tools``.
+Next run the following script to fully setup Chipyard with a specific toolchain.
+There are two toolchains, one for normal RISC-V programs called ``riscv-tools`` which is the one needed for most Chipyard use-cases, and another for Hwacha called ``esp-tools``.
 Run the following script based off which compiler you would like to use.
+
+.. Note:: Prior versions of Chipyard recommended ``esp-tools`` for Gemmini development. Gemmini should now be used with the standard ``riscv-tools``.
+
+.. Warning:: The following script will complete a "full" installation of Chipyard which may take a long time depending on the system.
+    Ensure that this script completes fully (no interruptions) before continuing on. User can use the ``--skip`` or ``-s`` flag to skip steps:
+
+    ``-s 1`` skips initializing Conda environment
+
+    ``-s 2`` skips initializing Chipyard submodules
+
+    ``-s 3`` skips initializing toolchain collateral (Spike, PK, tests, libgloss)
+
+    ``-s 4`` skips initializing ctags
+
+    ``-s 5`` skips pre-compiling Chipyard Scala sources
+
+    ``-s 6`` skips initializing FireSim
+
+    ``-s 7`` skips pre-compiling FireSim sources
+
+    ``-s 8`` skips initializing FireMarshal
+
+    ``-s 9`` skips pre-compiling FireMarshal default buildroot Linux sources
+
+    ``-s 10`` skips running repository clean-up
 
 .. code-block:: shell
 
     ./build-setup.sh riscv-tools # or esp-tools
 
-This script wraps around the conda environment initialization process and also runs the ``init-submodules-no-riscv-tools.sh`` and ``build-toolchain-extra.sh`` scripts.
+This script wraps around the conda environment initialization process, initializes all submodules (with the ``init-submodules-no-riscv-tools.sh`` script), installs a toolchain, and runs other setups.
+See ``./build-setup.sh --help`` for more details on what this does and how to disable parts of the setup.
 
-The ``init-submodules-no-riscv-tools.sh`` script will initialize and checkout all of the necessary git submodules.
-This will also validate that you are on a tagged branch, otherwise it will prompt for confirmation.
-When updating Chipyard to a new version, you will also want to rerun this script to update the submodules.
-Using ``git`` directly will try to initialize all submodules; this is not recommended unless you expressly desire this behavior.
+.. Warning:: Using ``git`` directly will try to initialize all submodules; this is not recommended unless you expressly desire this behavior.
 
-The ``build-toolchain-extra.sh`` script will install extra toolchain utilities/tests used by Chipyard.
-This command builds utilities like Spike, RISC-V Proxy Kernel, libgloss, and RISC-V tests from source for a specific toolchain type.
+.. Note:: By default, the ``build-setup.sh`` script installs extra toolchain utilities (RISC-V tests, PK, Spike, etc) to ``$CONDA_PREFIX/<toolchain-type>``. Thus, if you uninstall the compiler using ``conda remove`` these utilities/tests will also have to be re-installed/built.
 
-.. Note:: By default, the ``build-toolchain-extra.sh`` script installs to ``$CONDA_PREFIX/<toolchain-type>``. Thus, if you uninstall the compiler using ``conda remove`` these utilities/tests will also have to be re-installed/built.
-
-.. Note:: If you already have a working conda environment setup, separate Chipyard clones can use that pre-used environment in combination with running the aforementioned scripts yourself (``init-submodules...`` and ``build-toolchain...``).
+.. Note:: If you already have a working conda environment setup, separate Chipyard clones can use that pre-used environment in combination with running the aforementioned scripts yourself (``init-submodules...``, ``build-toolchain...``, etc).
 
 .. Note:: If you are a power user and would like to build your own compiler/toolchain, you can refer to the https://github.com/ucb-bar/riscv-tools-feedstock and https://github.com/ucb-bar/esp-tools-feedstock repositories (submoduled in the ``toolchains/*`` directories) on how to build the compiler yourself.
 
@@ -103,6 +124,8 @@ This file activates the conda environment created in ``build-setup.sh`` and sets
 Once the script is run, the ``PATH``, ``RISCV``, and ``LD_LIBRARY_PATH`` environment variables will be set properly for the toolchain requested.
 You can source this file in your ``.bashrc`` or equivalent environment setup file to get the proper variables, or directly include it in your current environment:
 
+.. Note:: If you are on a Mac or a RHEL/CentOS-based Linux distribution, you must deactivate the base conda environment with ``conda deactivate`` first before proceeding. You may also choose to keep it deactivated by default with ``conda config --set auto_activate_base false``. See this `issue <https://github.com/conda/conda/issues/9392>`__ for more details.
+
 .. code-block:: shell
 
     source ./env.sh
@@ -116,7 +139,7 @@ You can source this file in your ``.bashrc`` or equivalent environment setup fil
     However, it is recommended that the final ``env.sh`` file sourced is the ``env.sh`` located in the
     Chipyard repo that you expect to run ``make`` commands in.
 
-Pre-built Docker Image
+DEPRECATED: Pre-built Docker Image
 -------------------------------------------
 
 An alternative to setting up the Chipyard repository locally is to pull the pre-built Docker image from Docker Hub. The image comes with all dependencies installed, Chipyard cloned, and toolchains initialized. This image sets up baseline Chipyard (not including FireMarshal, FireSim, and Hammer initializations). Each image comes with a tag that corresponds to the version of Chipyard cloned/set-up in that image. Not including a tag during the pull will pull the image with the latest version of Chipyard.

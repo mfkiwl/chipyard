@@ -4,7 +4,7 @@ import java.io.File
 
 import chisel3._
 import chisel3.util.{log2Up}
-import freechips.rocketchip.config.{Parameters, Config}
+import org.chipsalliance.cde.config.{Parameters, Config}
 import freechips.rocketchip.groundtest.TraceGenParams
 import freechips.rocketchip.tile._
 import freechips.rocketchip.tilelink._
@@ -18,8 +18,8 @@ import sifive.blocks.devices.uart.{PeripheryUARTKey, UARTParams}
 import scala.math.{min, max}
 
 import chipyard.clocking.{ChipyardPRCIControlKey}
+import chipyard.harness.{HarnessClockInstantiatorKey}
 import icenet._
-import testchipip.WithRingSystemBus
 
 import firesim.bridges._
 import firesim.configs._
@@ -44,6 +44,11 @@ class WithoutClockGating extends Config((site, here, up) => {
   case ChipyardPRCIControlKey => up(ChipyardPRCIControlKey, site).copy(enableTileClockGating = false)
 })
 
+// Use the firesim clock bridge instantiator. this is required
+class WithFireSimHarnessClockBridgeInstantiator extends Config((site, here, up) => {
+  case HarnessClockInstantiatorKey => () => new FireSimClockBridgeInstantiator
+})
+
 // Testing configurations
 // This enables printfs used in testing
 class WithScalaTestFeatures extends Config((site, here, up) => {
@@ -62,40 +67,51 @@ class WithNIC extends icenet.WithIceNIC(inBufFlits = 8192, ctrlQueueDepth = 64)
 class WithNVDLALarge extends nvidia.blocks.dla.WithNVDLA("large")
 class WithNVDLASmall extends nvidia.blocks.dla.WithNVDLA("small")
 
-// Non-frequency tweaks that are generally applied to all firesim configs
-class WithFireSimDesignTweaks extends Config(
-  // Optional: reduce the width of the Serial TL interface
-  new testchipip.WithSerialTLWidth(4) ++
-  // Required: Bake in the default FASED memory model
-  new WithDefaultMemModel ++
-  // Required*: Uses FireSim ClockBridge and PeekPokeBridge to drive the system with a single clock/reset
-  new WithFireSimHarnessClockBinder ++
-  new WithFireSimSimpleClocks ++
+// Minimal set of FireSim-related design tweaks - notably discludes FASED, TraceIO, and the BlockDevice
+class WithMinimalFireSimDesignTweaks extends Config(
+  // Required*: Punch all clocks to FireSim's harness clock instantiator
+  new WithFireSimHarnessClockBridgeInstantiator ++
+  new chipyard.harness.WithHarnessBinderClockFreqMHz(1000.0) ++
+  new chipyard.harness.WithClockAndResetFromHarness ++
+  new chipyard.clocking.WithPassthroughClockGenerator ++
   // Required*: When using FireSim-as-top to provide a correct path to the target bootrom source
   new WithBootROM ++
   // Required: Existing FAME-1 transform cannot handle black-box clock gates
   new WithoutClockGating ++
   // Required*: Removes thousands of assertions that would be synthesized (* pending PriorityMux bugfix)
   new WithoutTLMonitors ++
+  // Required: Do not support debug module w. JTAG until FIRRTL stops emitting @(posedge ~clock)
+  new chipyard.config.WithNoDebug
+)
+
+// Non-frequency tweaks that are generally applied to all firesim configs
+class WithFireSimDesignTweaks extends Config(
+  new WithMinimalFireSimDesignTweaks ++
+  // Required: Bake in the default FASED memory model
+  new WithDefaultMemModel ++
+  // Optional: reduce the width of the Serial TL interface
+  new testchipip.WithSerialTLWidth(4) ++
+  // Required*: Scale default baud rate with periphery bus frequency
+  new chipyard.config.WithUARTInitBaudRate(BigInt(3686400L)) ++
   // Optional: Adds IO to attach tracerV bridges
   new chipyard.config.WithTraceIO ++
   // Optional: Request 16 GiB of target-DRAM by default (can safely request up to 32 GiB on F1)
   new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 16L) ++
   // Optional: Removing this will require using an initramfs under linux
-  new testchipip.WithBlockDevice ++
-  // Required*: Scale default baud rate with periphery bus frequency
-  new chipyard.config.WithUART(BigInt(3686400L)) ++
-  // Required: Do not support debug module w. JTAG until FIRRTL stops emitting @(posedge ~clock)
-  new chipyard.config.WithNoDebug
+  new testchipip.WithBlockDevice
 )
 
 // Tweaks to modify target clock frequencies / crossings to legacy firesim defaults
 class WithFireSimHighPerfClocking extends Config(
+  // Create clock group for uncore that does not include mbus
+  new chipyard.clocking.WithClockGroupsCombinedByName(("uncore", Seq("sbus", "pbus", "fbus", "cbus", "implicit"), Nil)) ++
   // Optional: This sets the default frequency for all buses in the system to 3.2 GHz
   // (since unspecified bus frequencies will use the pbus frequency)
   // This frequency selection matches FireSim's legacy selection and is required
   // to support 200Gb NIC performance. You may select a smaller value.
   new chipyard.config.WithPeripheryBusFrequency(3200.0) ++
+  new chipyard.config.WithSystemBusFrequency(3200.0) ++
+  new chipyard.config.WithFrontBusFrequency(3200.0) ++
   // Optional: These three configs put the DRAM memory system in it's own clock domain.
   // Removing the first config will result in the FASED timing model running
   // at the pbus freq (above, 3.2 GHz), which is outside the range of valid DDR3 speedgrades.
@@ -109,25 +125,63 @@ class WithFireSimHighPerfClocking extends Config(
 // Tweaks that are generally applied to all firesim configs setting a single clock domain at 1000 MHz
 class WithFireSimConfigTweaks extends Config(
   // 1 GHz matches the FASED default (DRAM modeli realistically configured for that frequency)
-  // Using some other frequency will require runnings the FASED runtime configuration generator 
+  // Using some other frequency will require runnings the FASED runtime configuration generator
   // to generate faithful DDR3 timing values.
   new chipyard.config.WithSystemBusFrequency(1000.0) ++
-  new chipyard.config.WithSystemBusFrequencyAsDefault ++ // All unspecified clock frequencies, notably the implicit clock, will use the sbus freq (1000 MHz)
-  // Explicitly set PBUS + MBUS to 1000 MHz, since they will be driven to 100 MHz by default because of assignments in the Chisel
   new chipyard.config.WithPeripheryBusFrequency(1000.0) ++
   new chipyard.config.WithMemoryBusFrequency(1000.0) ++
   new WithFireSimDesignTweaks
 )
 
-// Tweak more representative of testchip configs
-class WithFireSimTestChipConfigTweaks extends Config(
-  new chipyard.config.WithTestChipBusFreqs ++
-  new WithFireSimDesignTweaks
+// Tweaks to use minimal design tweaks
+// Need to use initramfs to use linux (no block device)
+class WithMinimalFireSimHighPerfConfigTweaks extends Config(
+  new WithFireSimHighPerfClocking ++
+  new freechips.rocketchip.subsystem.WithNoMemPort ++
+  new testchipip.WithMbusScratchpad ++
+  new WithMinimalFireSimDesignTweaks
+)
+
+/**
+  * Adds BlockDevice to WithMinimalFireSimHighPerfConfigTweaks
+  */
+class WithMinimalAndBlockDeviceFireSimHighPerfConfigTweaks extends Config(
+  new WithFireSimHighPerfClocking ++
+  new freechips.rocketchip.subsystem.WithNoMemPort ++ // removes mem port for FASEDBridge to match against
+  new testchipip.WithMbusScratchpad ++ // adds backing scratchpad for memory to replace FASED model
+  new testchipip.WithBlockDevice(true) ++ // add in block device
+  new WithMinimalFireSimDesignTweaks
+)
+
+/**
+  *  Adds Block device to WithMinimalFireSimHighPerfConfigTweaks
+  */
+class WithMinimalAndFASEDFireSimHighPerfConfigTweaks extends Config(
+  new WithFireSimHighPerfClocking ++
+  new WithDefaultMemModel ++ // add default FASED memory model
+  new WithMinimalFireSimDesignTweaks
 )
 
 // Tweaks for legacy FireSim configs.
 class WithFireSimHighPerfConfigTweaks extends Config(
   new WithFireSimHighPerfClocking ++
+  new WithFireSimDesignTweaks
+)
+
+// Tweak more representative of testchip configs
+class WithFireSimTestChipConfigTweaks extends Config(
+  // Frequency specifications
+  new chipyard.config.WithTileFrequency(1000.0) ++       // Realistic tile frequency for a test chip
+  new chipyard.config.WithSystemBusFrequency(500.0) ++   // Realistic system bus frequency
+  new chipyard.config.WithMemoryBusFrequency(1000.0) ++  // Needs to be 1000 MHz to model DDR performance accurately
+  new chipyard.config.WithPeripheryBusFrequency(500.0) ++  // Match the sbus and pbus frequency
+  new chipyard.clocking.WithClockGroupsCombinedByName(("uncore", Seq("sbus", "pbus", "fbus", "cbus", "implicit"), Seq("tile"))) ++
+  //  Crossing specifications
+  new chipyard.config.WithCbusToPbusCrossingType(AsynchronousCrossing()) ++ // Add Async crossing between PBUS and CBUS
+  new chipyard.config.WithSbusToMbusCrossingType(AsynchronousCrossing()) ++ // Add Async crossings between backside of L2 and MBUS
+  new freechips.rocketchip.subsystem.WithRationalRocketTiles ++   // Add rational crossings between RocketTile and uncore
+  new boom.common.WithRationalBoomTiles ++ // Add rational crossings between BoomTile and uncore
+  new testchipip.WithAsynchronousSerialSlaveCrossing ++ // Add Async crossing between serial and MBUS. Its master-side is tied to the FBUS
   new WithFireSimDesignTweaks
 )
 
@@ -153,6 +207,22 @@ class FireSimRocketConfig extends Config(
   new chipyard.RocketConfig)
 // DOC include end: firesimconfig
 
+class FireSimRocket1GiBDRAMConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 1L) ++
+  new FireSimRocketConfig)
+
+class FireSimRocketMMIOOnly1GiBDRAMConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 1L) ++
+  new FireSimRocketMMIOOnlyConfig)
+
+class FireSimRocket4GiBDRAMConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 4L) ++
+  new FireSimRocketConfig)
+
+class FireSimRocketMMIOOnly4GiBDRAMConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 4L) ++
+  new FireSimRocketMMIOOnlyConfig)
+
 class FireSimQuadRocketConfig extends Config(
   new WithDefaultFireSimBridges ++
   new WithDefaultMemModel ++
@@ -171,7 +241,7 @@ class FireSimSmallSystemConfig extends Config(
   new freechips.rocketchip.subsystem.WithExtMemSize(1 << 28) ++
   new testchipip.WithDefaultSerialTL ++
   new testchipip.WithBlockDevice ++
-  new chipyard.config.WithUART ++
+  new chipyard.config.WithUARTInitBaudRate(BigInt(3686400L)) ++
   new freechips.rocketchip.subsystem.WithInclusiveCache(nWays = 2, capacityKB = 64) ++
   new chipyard.RocketConfig)
 
@@ -202,22 +272,26 @@ class FireSimGemminiRocketConfig extends Config(
   new WithFireSimConfigTweaks ++
   new chipyard.GemminiRocketConfig)
 
-//******************************************************************
-// Configuration with Ring topology SystemBus
-//******************************************************************
-class FireSimRingSystemBusRocketConfig extends Config(
+class FireSimLeanGemminiRocketConfig extends Config(
   new WithDefaultFireSimBridges ++
   new WithDefaultMemModel ++
   new WithFireSimConfigTweaks ++
-  new chipyard.RingSystemBusRocketConfig)
+  new chipyard.LeanGemminiRocketConfig)
+
+class FireSimLeanGemminiPrintfRocketConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithDefaultMemModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.LeanGemminiPrintfRocketConfig)
 
 //**********************************************************************************
 // Supernode Configurations, base off chipyard's RocketConfig
 //**********************************************************************************
 class SupernodeFireSimRocketConfig extends Config(
-  new WithNumNodes(4) ++
-  new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 8L) ++ // 8 GB
-  new FireSimRocketConfig)
+  new WithFireSimHarnessClockBridgeInstantiator ++
+  new chipyard.harness.WithHomogeneousMultiChip(n=4, new Config(
+    new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 8L) ++ // 8GB DRAM per node
+    new FireSimRocketConfig)))
 
 //**********************************************************************************
 //* CVA6 Configurations
@@ -255,6 +329,18 @@ class FireSim16LargeBoomConfig extends Config(
 class FireSimNoMemPortConfig extends Config(
   new WithDefaultFireSimBridges ++
   new freechips.rocketchip.subsystem.WithNoMemPort ++
-  new testchipip.WithBackingScratchpad ++
+  new testchipip.WithMbusScratchpad ++
   new WithFireSimConfigTweaks ++
   new chipyard.RocketConfig)
+
+class FireSimRocketMMIOOnlyConfig extends Config(
+  new WithDefaultMMIOOnlyFireSimBridges ++
+  new WithDefaultMemModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.RocketConfig)
+
+class FireSimLeanGemminiRocketMMIOOnlyConfig extends Config(
+  new WithDefaultMMIOOnlyFireSimBridges ++
+  new WithDefaultMemModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.LeanGemminiRocketConfig)

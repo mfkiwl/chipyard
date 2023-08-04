@@ -3,7 +3,7 @@ package chipyard.fpga.vcu118
 import chisel3._
 
 import freechips.rocketchip.diplomacy._
-import freechips.rocketchip.config.{Parameters, Field}
+import org.chipsalliance.cde.config.{Parameters, Field}
 import freechips.rocketchip.tilelink.{TLInwardNode, TLAsyncCrossingSink}
 
 import sifive.fpgashells.shell._
@@ -107,4 +107,3 @@ class DDR2VCU118ShellPlacer(shell: VCU118FPGATestHarness, val shellInput: DDRShe
   extends DDRShellPlacer[VCU118FPGATestHarness] {
   def place(designInput: DDRDesignInput) = new DDR2VCU118PlacedOverlay(shell, valName.name, designInput, shellInput)
 }
-

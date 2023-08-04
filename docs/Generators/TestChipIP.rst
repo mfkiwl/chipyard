@@ -2,16 +2,16 @@ Test Chip IP
 ============
 
 Chipyard includes a Test Chip IP library which provides various hardware
-widgets that may be useful when designing SoCs. This includes a :ref:`Generators/TestChipIP:Serial Adapter`,
+widgets that may be useful when designing SoCs. This includes a :ref:`Generators/TestChipIP:SimTSI`,
 :ref:`Generators/TestChipIP:Block Device Controller`, :ref:`Generators/TestChipIP:TileLink SERDES`, :ref:`Generators/TestChipIP:TileLink Switcher`,
 :ref:`Generators/TestChipIP:TileLink Ring Network`, and :ref:`Generators/TestChipIP:UART Adapter`.
 
-Serial Adapter
+SimTSI
 --------------
 
-The serial adapter is used by tethered test chips to communicate with the host
+The SimTSI and TSIToTileLink are used by tethered test chips to communicate with the host
 processor. An instance of RISC-V frontend server running on the host CPU
-can send commands to the serial adapter to read and write data from the memory
+can send commands to the TSIToTileLink to read and write data from the memory
 system. The frontend server uses this functionality to load the test program
 into memory and to poll for completion of the program. More information on
 this can be found in :ref:`Customization/Boot-Process:Chipyard Boot Process`.
@@ -69,7 +69,7 @@ to the TLXbar provided by RocketChip, but uses ring networks internally rather
 than crossbars. This can be useful for chips with very wide TileLink networks
 (many cores and L2 banks) that can sacrifice cross-section bandwidth to relieve
 wire routing congestion. Documentation on how to use the ring network can be
-found in :ref:`Customization/Memory-Hierarchy:The System Bus`. The implementation itself can be found 
+found in :ref:`Customization/Memory-Hierarchy:The System Bus`. The implementation itself can be found
 `here <https://github.com/ucb-bar/testchipip/blob/master/src/main/scala/Ring.scala>`_,
 and may serve as an example of how to implement your own TileLink network with
 a different topology.

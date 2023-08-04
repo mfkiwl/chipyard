@@ -1,6 +1,6 @@
 # General Hammer Inputs Related to the Design and Build System
 
-# Generate Make include to aid in flow 
+# Generate Make include to aid in flow
 vlsi.core.build_system: make
 vlsi.core.max_threads: 12
 
@@ -10,7 +10,7 @@ vlsi.inputs.power_spec_type: "cpf"
 
 # Specify clock signals
 vlsi.inputs.clocks: [
-  {name: "clock_clock", period: "2ns", uncertainty: "0.1ns"}
+  {name: "clock_uncore_clock", period: "2ns", uncertainty: "0.1ns"}
 ]
 
 # Specify pin properties
