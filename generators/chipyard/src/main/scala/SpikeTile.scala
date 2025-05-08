@@ -2,7 +2,7 @@ package chipyard
 
 import chisel3._
 import chisel3.util._
-import chisel3.experimental.{IntParam, StringParam, IO}
+import chisel3.experimental.{IntParam, StringParam}
 
 import org.chipsalliance.cde.config._
 import freechips.rocketchip.subsystem._
@@ -14,9 +14,14 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.interrupts._
 import freechips.rocketchip.util._
 import freechips.rocketchip.tile._
-import freechips.rocketchip.prci.ClockSinkParameters
+import freechips.rocketchip.prci._
 
-case class SpikeCoreParams() extends CoreParams {
+case class SpikeCoreParams(
+  nPMPs: Int = 16,
+  useZicntr: Boolean = false
+) extends CoreParams {
+  val xLen = 64
+  val pgLevels = 5
   val useVM = true
   val useHypervisor = false
   val useSupervisor = true
@@ -33,7 +38,6 @@ case class SpikeCoreParams() extends CoreParams {
   val nLocalInterrupts = 0
   val useNMI = false
   val nPTECacheEntries = 0
-  val nPMPs = 16
   val pmpGranularity = 4
   val nBreakpoints = 0
   val useBPWatch = false
@@ -58,13 +62,14 @@ case class SpikeCoreParams() extends CoreParams {
   val btbEntries = 0
   val bhtEntries = 0
   val traceHasWdata = false
-  val useBitManip = false
-  val useBitManipCrypto = false
-  val useCryptoNIST = false
-  val useCryptoSM = false
   val useConditionalZero = false
+  val useZba = true
+  val useZbb = true
+  val useZbs = true
 
   override def vLen = 128
+  override def eLen = 64
+  override def vfLen = 64
   override def vMemDataBits = 128
 }
 
@@ -77,14 +82,15 @@ case class SpikeTileAttachParams(
 }
 
 case class SpikeTileParams(
-  hartId: Int = 0,
+  tileId: Int = 0,
   val core: SpikeCoreParams = SpikeCoreParams(),
   icacheParams: ICacheParams = ICacheParams(nWays = 32),
   dcacheParams: DCacheParams = DCacheParams(nWays = 32),
   tcmParams: Option[MasterPortParams] = None // tightly coupled memory
 ) extends InstantiableTileParams[SpikeTile]
 {
-  val name = Some("spike_tile")
+  val baseName = "spike_tile"
+  val uniqueName = s"${baseName}_$tileId"
   val beuAddr = None
   val blockerCtrlAddr = None
   val btb = None
@@ -92,7 +98,7 @@ case class SpikeTileParams(
   val dcache = Some(dcacheParams)
   val icache = Some(icacheParams)
   val clockSinkParams = ClockSinkParameters()
-  def instantiate(crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters): SpikeTile = {
+  def instantiate(crossing: HierarchicalElementCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters): SpikeTile = {
     new SpikeTile(this, crossing, lookup)
   }
 }
@@ -106,15 +112,26 @@ class SpikeTile(
     with SourcesExternalNotifications
 {
   // Private constructor ensures altered LazyModule.p is used implicitly
-  def this(params: SpikeTileParams, crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters) =
+  def this(params: SpikeTileParams, crossing: HierarchicalElementCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters) =
     this(params, crossing.crossingType, lookup, p)
 
   // Required TileLink nodes
-  val intOutwardNode = IntIdentityNode()
+  val intOutwardNode = None
   val masterNode = visibilityNode
   val slaveNode = TLIdentityNode()
 
-  override def isaDTS = "rv64gcv_Zfh"
+  // Note: Rocket doesn't support zicntr but Spike does (err on the side of having Rocket's ISA)
+  override def isaDTS = (Seq(
+    "rv64imafdcbv",
+    "zicsr",
+    "zifencei",
+    "zihpm",
+    "zvl128b",
+    "zve64d",
+    "zba",
+    "zbb",
+    "zbs"
+  ) ++ spikeTileParams.core.useZicntr.option("zicntr")).mkString("_")
 
   // Required entry of CPU device in the device tree for interrupt purpose
   val cpuDevice: SimpleDevice = new SimpleDevice("cpu", Seq("ucb-bar,spike", "riscv")) {
@@ -129,21 +146,21 @@ class SpikeTile(
   }
 
   ResourceBinding {
-    Resource(cpuDevice, "reg").bind(ResourceAddress(hartId))
+    Resource(cpuDevice, "reg").bind(ResourceAddress(tileId))
   }
 
 
   val icacheNode = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
     sourceId = IdRange(0, 1),
-    name = s"Core ${staticIdForMetadataUseOnly} ICache")))))
+    name = s"Core ${tileId} ICache")))))
 
   val dcacheNode = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
-    name          = s"Core ${staticIdForMetadataUseOnly} DCache",
+    name          = s"Core ${tileId} DCache",
     sourceId      = IdRange(0, tileParams.dcache.get.nMSHRs),
     supportsProbe = TransferSizes(p(CacheBlockBytes), p(CacheBlockBytes)))))))
 
   val mmioNode = TLClientNode((Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
-    name          = s"Core ${staticIdForMetadataUseOnly} MMIO",
+    name          = s"Core ${tileId} MMIO",
     sourceId      = IdRange(0, 1),
     requestFifo   = true))))))
 
@@ -313,7 +330,7 @@ class SpikeBlackBox(
 }
 
 class SpikeTileModuleImp(outer: SpikeTile) extends BaseTileModuleImp(outer) {
-
+  val tileParams = outer.tileParams
   // We create a bundle here and decode the interrupt.
   val int_bundle = Wire(new TileInterrupts())
   outer.decodeCoreInterrupts(int_bundle)
@@ -337,7 +354,7 @@ class SpikeTileModuleImp(outer: SpikeTile) extends BaseTileModuleImp(outer) {
   // then the DTM-based bringup with SimDTM will be used. This isn't required to be
   // true, but it usually is
   val useDTM = p(ExportDebug).protocols.contains(DMI)
-  val spike = Module(new SpikeBlackBox(hartId, isaDTS, tileParams.core.nPMPs,
+  val spike = Module(new SpikeBlackBox(outer.tileId, outer.isaDTS, tileParams.core.nPMPs,
     tileParams.icache.get.nSets, tileParams.icache.get.nWays,
     tileParams.dcache.get.nSets, tileParams.dcache.get.nWays,
     tileParams.dcache.get.nMSHRs,
@@ -467,19 +484,25 @@ class SpikeTileModuleImp(outer: SpikeTile) extends BaseTileModuleImp(outer) {
   }
 }
 
-class WithNSpikeCores(n: Int = 1, tileParams: SpikeTileParams = SpikeTileParams(),
-  overrideIdOffset: Option[Int] = None) extends Config((site, here, up) => {
+class WithSpikeZicntr extends TileAttachConfig[SpikeTileAttachParams](t =>
+  t.copy(tileParams=t.tileParams.copy(core=t.tileParams.core.copy(useZicntr=true)))
+)
+
+class WithNSpikeCores(n: Int = 1, tileParams: SpikeTileParams = SpikeTileParams()
+) extends Config((site, here, up) => {
   case TilesLocated(InSubsystem) => {
     // Calculate the next available hart ID (since hart ID cannot be duplicated)
     val prev = up(TilesLocated(InSubsystem), site)
-    val idOffset = overrideIdOffset.getOrElse(prev.size)
+    val idOffset = up(NumTiles)
     // Create TileAttachParams for every core to be instantiated
     (0 until n).map { i =>
       SpikeTileAttachParams(
-        tileParams = tileParams.copy(hartId = i + idOffset)
+        tileParams = tileParams.copy(tileId = i + idOffset)
       )
     } ++ prev
   }
+  case NumTiles => up(NumTiles) + n
+
 })
 
 class WithSpikeTCM extends Config((site, here, up) => {
@@ -492,5 +515,5 @@ class WithSpikeTCM extends Config((site, here, up) => {
     )))
   }
   case ExtMem => None
-  case BankedL2Key => up(BankedL2Key).copy(nBanks = 0)
+  case SubsystemBankedCoherenceKey => up(SubsystemBankedCoherenceKey).copy(nBanks = 0)
 })

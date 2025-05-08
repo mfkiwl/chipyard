@@ -12,7 +12,7 @@
 
 #if __has_include("spiketile_tsi.h")
 #define SPIKETILE_HTIF_TSI
-extern htif_t* tsi;
+extern std::map<int, htif_t*> tsis;
 #endif
 #if __has_include("spiketile_dtm.h")
 #define SPIKETILE_HTIF_DTM
@@ -185,6 +185,7 @@ context_t *host;
 std::map<int, tile_t*> tiles;
 std::ostream sout(nullptr);
 log_file_t* log_file;
+#define DEFAULT_PRIV_ "MSU"
 
 extern "C" void spike_tile_reset(int hartid)
 {
@@ -295,7 +296,7 @@ extern "C" void spike_tile(int hartid, char* isa,
   }
   if (tiles.find(hartid) == tiles.end()) {
     printf("Constructing spike processor_t\n");
-    isa_parser_t *isa_parser = new isa_parser_t(isa, "MSU");
+    isa_parser_t *isa_parser = new isa_parser_t(isa, DEFAULT_PRIV_);
     std::string* isastr = new std::string(isa);
     chipyard_simif_t* simif = new chipyard_simif_t(icache_ways, icache_sets,
                                                    dcache_ways, dcache_sets,
@@ -303,7 +304,8 @@ extern "C" void spike_tile(int hartid, char* isa,
                                                    icache_sourceids, dcache_sourceids,
                                                    tcm_base, tcm_size,
                                                    isastr->c_str(), pmpregions);
-    processor_t* p = new processor_t(isa_parser,
+    processor_t* p = new processor_t(isa,
+                                     DEFAULT_PRIV_,
                                      &simif->get_cfg(),
                                      simif,
                                      hartid,
@@ -346,8 +348,8 @@ extern "C" void spike_tile(int hartid, char* isa,
   chipyard_simif_t* simif = tile->simif;
   processor_t* proc = tile->proc;
 #if defined(SPIKETILE_HTIF_TSI)
-  if (!simif->htif && tsi)
-    simif->htif = tsi;
+  if (!simif->htif && tsis.size() > 0 && tsis[0])
+    simif->htif = tsis[0];
 #endif
 #if defined(SPIKETILE_HTIF_DTM)
   if (!simif->htif && dtm)
@@ -447,18 +449,6 @@ chipyard_simif_t::chipyard_simif_t(size_t icache_ways,
   use_stq(false),
   htif(nullptr),
   fast_clint(false),
-  cfg(std::make_pair(0, 0),
-      nullptr,
-      isastr,
-      "MSU",
-      "vlen:128,elen:64",
-      false,
-      endianness_little,
-      pmpregions,
-      std::vector<mem_cfg_t>(),
-      std::vector<size_t>(),
-      false,
-      0),
   accessed_tofrom_host(false),
   icache_ways(icache_ways),
   icache_sets(icache_sets),
@@ -469,6 +459,18 @@ chipyard_simif_t::chipyard_simif_t(size_t icache_ways,
   mmio_valid(false),
   mmio_inflight(false)
 {
+
+  cfg.initrd_bounds = std::make_pair(0, 0);
+  cfg.bootargs = nullptr;
+  cfg.isa = isastr;
+  cfg.priv = DEFAULT_PRIV_;
+  cfg.misaligned = false;
+  cfg.endianness = endianness_little;
+  cfg.pmpregions = pmpregions;
+  cfg.mem_layout = std::vector<mem_cfg_t>();
+  cfg.hartids = std::vector<size_t>();
+  cfg.explicit_hartids = false;
+  cfg.trigger_count = 0;
 
   icache.resize(icache_ways);
   for (auto &w : icache) {
@@ -1075,7 +1077,7 @@ void chipyard_simif_t::loadmem(size_t base, const char* fname) {
   } loadmem_memif(this, tcm_base);
 
   reg_t entry;
-  load_elf(fname, &loadmem_memif, &entry);
+  load_elf(fname, &loadmem_memif, &entry, 0);
 }
 
 bool insn_should_fence(uint64_t bits) {

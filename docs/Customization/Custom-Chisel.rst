@@ -52,15 +52,15 @@ Then add ``yourproject`` to the Chipyard top-level build.sbt file.
 
 You can then import the classes defined in the submodule in a new project if
 you add it as a dependency. For instance, if you want to use this code in
-the ``chipyard`` project, add your project to the list of sub-projects in the 
+the ``chipyard`` project, add your project to the list of sub-projects in the
 `.dependsOn()` for `lazy val chipyard`. The original code may change over time, but it
 should look something like this:
 
 .. code-block:: scala
 
     lazy val chipyard = (project in file("generators/chipyard"))
-        .dependsOn(testchipip, rocketchip, boom, hwacha, sifive_blocks, sifive_cache, iocell,
-            sha3, dsptools, `rocket-dsp-utils`,
+        .dependsOn(testchipip, rocketchip, boom, rocketchip_blocks, rocketchip_inclusive_cache,
+            dsptools, `rocket-dsp-utils`,
             gemmini, icenet, tracegen, cva6, nvdla, sodor, ibex, fft_generator,
             yourproject, // <- added to the middle of the list for simplicity
             constellation, mempress)
